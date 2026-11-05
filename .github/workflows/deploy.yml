@@ -1,14 +1,26 @@
-name: CI & Deployment
+name: Deploy
 
 on:
   push:
     branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/deploy.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/deploy.yml"
 
 jobs:
   check:
-    name: Check (Formatting & Vet)
+    name: Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,7 +32,7 @@ jobs:
           go-version-file: "go.mod"
           check-latest: true
 
-      - name: Check Formatting (gofmt)
+      - name: Gofmt
         run: |
           UNFORMATTED=$(gofmt -l -s .)
           if [ -n "$UNFORMATTED" ]; then
@@ -79,7 +91,7 @@ jobs:
           retention-days: 1
 
   deploy:
-    name: Deploy to VPS
+    name: Deploy
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
