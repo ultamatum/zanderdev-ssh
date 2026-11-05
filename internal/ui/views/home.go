@@ -1,7 +1,10 @@
 package views
 
 import (
+	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -46,13 +49,31 @@ var (
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	metaStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 )
 
 type board struct {
-	cursor int
-	open   bool
-	width  int
-	height int
+	cursor  int
+	open    bool
+	applied bool
+	visitor string
+	width   int
+	height  int
+}
+
+type appliedMsg struct{ err error }
+
+func apply(visitor string, j job) tea.Cmd {
+	return func() tea.Msg {
+		f, err := os.OpenFile("applications.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return appliedMsg{err}
+		}
+		defer f.Close()
+		line := fmt.Sprintf("%s\t%s\t%s\n", time.Now().Format(time.RFC3339), visitor, j.title)
+		_, err = f.WriteString(line)
+		return appliedMsg{err}
+	}
 }
 
 func (b board) Init() tea.Cmd {
@@ -64,6 +85,8 @@ func (b board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		b.width = msg.Width
 		b.height = msg.Height
+	case appliedMsg:
+		b.applied = msg.err == nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -80,6 +103,10 @@ func (b board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			b.open = true
 		case "esc", "left", "h":
 			b.open = false
+		case "a":
+			if b.open && b.visitor != "anonymous" {
+				return b, apply(b.visitor, jobs[b.cursor])
+			}
 		}
 	}
 	return b, nil
@@ -94,6 +121,14 @@ func (b board) View() tea.View {
 		s.WriteString(titleStyle.Render(j.title) + "\n")
 		s.WriteString(metaStyle.Render(j.team+" • "+j.location) + "\n\n")
 		s.WriteString(j.body + "\n\n")
+		switch {
+		case b.applied:
+			s.WriteString(okStyle.Render("Saved. We know your key, we will be in touch.") + "\n\n")
+		case b.visitor == "anonymous":
+			s.WriteString(metaStyle.Render("Connect with an SSH key to apply from here.") + "\n\n")
+		default:
+			s.WriteString(helpStyle.Render("a apply · "))
+		}
 		s.WriteString(helpStyle.Render("esc back • q quit"))
 	} else {
 		for i, j := range jobs {
@@ -107,11 +142,13 @@ func (b board) View() tea.View {
 		s.WriteString(helpStyle.Render("↑/↓ move · enter open · q quit"))
 	}
 
+	s.WriteString("\n\n" + metaStyle.Render("you: "+b.visitor))
+
 	v := tea.NewView(s.String())
 	v.AltScreen = true
 	return v
 }
 
-func NewBoard(width, height int) tea.Model {
-	return board{width: width, height: height}
+func NewBoard(visitor string, width, height int) tea.Model {
+	return board{visitor: visitor, width: width, height: height}
 }
