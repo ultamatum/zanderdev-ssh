@@ -27,3 +27,10 @@ go.work.sum
 
 # Editor/IDE
 .vscode/
+
+# SSH keys & host keys
+.ssh/
+*.ed25519*
+*.key
+id_rsa*
+id_ed25519*
