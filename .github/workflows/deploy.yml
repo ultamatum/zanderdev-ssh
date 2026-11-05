@@ -1,0 +1,112 @@
+name: CI & Deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Check (Formatting & Vet)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+
+      - name: Check Formatting (gofmt)
+        run: |
+          UNFORMATTED=$(gofmt -l -s .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not properly formatted:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: Go Vet
+        run: go vet ./...
+
+  test:
+    name: Test
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+
+      - name: Run Tests
+        run: go test -v -race ./...
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+
+      - name: Compile Linux Binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: "linux"
+          GOARCH: "amd64"
+        run: |
+          go build -ldflags="-s -w" -o zanderdev-ssh ./cmd/zanderdev-ssh
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zanderdev-ssh-binary
+          path: zanderdev-ssh
+          retention-days: 1
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Download Binary Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zanderdev-ssh-binary
+          path: ./
+
+      - name: Set Binary Permissions
+        run: chmod 755 zanderdev-ssh
+
+      - name: Deploy Binary over SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          PORT: ${{ secrets.VPS_PORT }}
+          USER: ${{ secrets.VPS_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key -P "$PORT" zanderdev-ssh "$USER@$HOST:/tmp/zanderdev-ssh.new"
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/deploy_key -p "$PORT" "$USER@$HOST" '
+            install -m 755 /tmp/zanderdev-ssh.new /usr/local/bin/zanderdev-ssh &&
+            rm -f /tmp/zanderdev-ssh.new &&
+            systemctl restart zanderdev-ssh &&
+            systemctl is-active --quiet zanderdev-ssh
+          '

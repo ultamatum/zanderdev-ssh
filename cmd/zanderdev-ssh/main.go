@@ -22,15 +22,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func main() {
-	addr := os.Getenv("SSH_ADDR")
-	if addr == "" {
-		addr = "localhost:23234"
-	}
-
-	s, err := wish.NewServer(
+func newServer(addr string, keyPath string) (*ssh.Server, error) {
+	return wish.NewServer(
 		wish.WithAddress(addr),
-		wish.WithHostKeyPath(".ssh/host_ed25519"),
+		wish.WithHostKeyPath(keyPath),
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool {
 			return true
 		}),
@@ -46,6 +41,15 @@ func main() {
 			logging.Middleware(),
 		),
 	)
+}
+
+func main() {
+	addr := os.Getenv("SSH_ADDR")
+	if addr == "" {
+		addr = "localhost:23234"
+	}
+
+	s, err := newServer(addr, ".ssh/host_ed25519")
 	if err != nil {
 		log.Fatalln(err)
 	}

@@ -34,3 +34,7 @@ go.work.sum
 *.key
 id_rsa*
 id_ed25519*
+
+# Application binary & logs
+/zanderdev-ssh
+*.log
